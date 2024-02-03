@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/user"
+	"path/filepath"
 	"strings"
 )
 
@@ -21,9 +24,9 @@ var (
 	c bool   // clean
 )
 
-var path string
+var mrPath string
 
-var file *os.File
+var mr = make(map[string]string)
 
 func init() {
 	flag.Usage = usage
@@ -35,61 +38,9 @@ func init() {
 	flag.StringVar(&d, "d", "", "删除标记")
 	flag.BoolVar(&c, "c", false, "清除无用标记(标记目录不存在)")
 	flag.Parse()
-
 	// todo 命令输入处理
-	path = getFilePath()
-	_, err := os.Stat(path)
-	if os.IsNotExist(err) {
 
-	} else if err == nil {
-
-	} else {
-		panic(err)
-	}
-
-	content, err := os.ReadFile(getFilePath())
-	if err != nil {
-		log.Fatal(err)
-	}
-	words := strings.Split(string(content), "\n")
-	for _, word := range words {
-		split := strings.Split(strings.TrimSpace(word), "=")
-		fmt.Println(split)
-
-	}
-	//file, err := os.OpenFile(getFilePath(), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0644)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//defer file.Close()
-
-	//mr := make(map[string]string)
-
-	//r := bufio.NewReader(file)
-	//for {
-	//	line, _, err := r.ReadLine()
-	//	if err != nil {
-	//		if err == io.EOF {
-	//			break
-	//		}
-	//		panic(err)
-	//	}
-	//	s := strings.TrimSpace(string(line))
-	//	index := strings.Index(s, "=")
-	//	if index < 0 {
-	//		continue
-	//	}
-	//	key := strings.TrimSpace(s[:index])
-	//	if len(key) == 0 {
-	//		continue
-	//	}
-	//	value := strings.TrimSpace(s[index+1:])
-	//	if len(value) == 0 {
-	//		continue
-	//	}
-	//	mr[key] = value
-	//}
-	//fmt.Println(mr)
+	read()
 
 	// 写入数据到文件
 	//_, err = file.Write(data)
@@ -111,12 +62,50 @@ func usage() {
 }
 
 func main() {
-	//fmt.Println("list:", l)
-	//readMR()
+	cmd := exec.Command("cd", "/Users/lkzc19/Projects/lkzc19/MarkReturn")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	err := cmd.Run()
+	if err != nil {
+		fmt.Println("无法切换目录:", err)
+		return
+	}
+
+	//list()
+	//mark()
 }
 
 func mark() {
+	currentDir, err := os.Getwd()
+	check(err)
 
+	var key string
+	if m != "" {
+		key = m
+	} else {
+		key = filepath.Base(currentDir)
+	}
+
+	value, ok := mr[key]
+
+	if ok {
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("是否要覆盖[key=" + value + "]? (Y/n): ")
+
+		input, err := reader.ReadString('\n')
+		check(err)
+		input = strings.TrimSpace(input)
+		if strings.ToLower(input) == "n" {
+			return
+		} else {
+			mr[key] = currentDir
+		}
+	} else {
+		mr[key] = currentDir
+	}
+
+	write()
 }
 
 // ret 即 return
@@ -125,7 +114,9 @@ func ret() {
 }
 
 func list() {
-
+	for key, value := range mr {
+		fmt.Println(key + "\t->\t" + value)
+	}
 }
 
 func edit() {
@@ -158,32 +149,46 @@ func getFilePath() string {
 	}
 }
 
-func checkFile(path string) {
-	_, err := os.Stat(path)
+func read() {
+	mrPath = getFilePath()
+	_, err := os.Stat(mrPath)
 	if os.IsNotExist(err) {
-
+		_, err := os.Create(mrPath)
+		check(err)
 	} else if err == nil {
-
+		content, err := os.ReadFile(getFilePath())
+		if err != nil {
+			log.Fatal(err)
+		}
+		lines := strings.Split(string(content), "\n")
+		for _, word := range lines {
+			if strings.TrimSpace(word) == "" {
+				continue
+			}
+			tmp := strings.Split(strings.TrimSpace(word), "=")
+			if len(tmp) != 2 {
+				fmt.Println(".mr 文件错误")
+			}
+			mr[tmp[0]] = tmp[1]
+		}
 	} else {
 		panic(err)
 	}
 }
 
-//func read() map[string]string {
-//	_, err := os.Stat(path)
-//	if os.IsNotExist(err) {
-//		return map[string]string{}
-//	} else if err == nil {
-//		data, err := os.ReadFile(path)
-//		check(err)
-//
-//	} else {
-//		panic(err)
-//	}
-//}
-
 func write() {
+	var builder strings.Builder
+	for key, value := range mr {
+		builder.WriteString(key + "=" + value + "\n")
+	}
 
+	// 打开文件，以写入的方式
+	file, err := os.OpenFile(mrPath, os.O_WRONLY, 0644)
+	check(err)
+	defer file.Close()
+	// 写入数据
+	_, err = file.Write([]byte(builder.String()))
+	check(err)
 }
 
 func check(err error) {
